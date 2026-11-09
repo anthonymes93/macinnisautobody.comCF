@@ -3,7 +3,7 @@ const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:
 const clean=(value,max)=>String(value||"").trim().slice(0,max);
 const escapeHtml=(value)=>value.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 export async function onRequestPost({request,env}){
-  if(!env.RESEND_API_KEY)return json({ok:false,error:"Contact form is not configured yet."},503);
+  if(!env.RESEND_API_KEY||!env.TURNSTILE_SECRET_KEY)return json({ok:false,error:"Contact form is not configured yet."},503);
   const origin=request.headers.get("origin");if(origin&&new URL(origin).host!==new URL(request.url).host)return json({ok:false,error:"Invalid origin."},403);\n  const type=request.headers.get("content-type")||"";
   if(!type.includes("multipart/form-data")&&!type.includes("application/x-www-form-urlencoded"))return json({ok:false,error:"Invalid form submission."},415);
   if(Number(request.headers.get("content-length")||0)>20000)return json({ok:false,error:"Submission too large."},413);
@@ -13,6 +13,17 @@ export async function onRequestPost({request,env}){
   const validEmail=!email||/^\S+@\S+\.\S+$/.test(email);
   const dialablePhone=phone.replace(/[^\d+]/g,"").replace(/(?!^)\+/g,"");
   if(!name||!message||(!email&&!phone)||!validEmail||(phone&&!/\d{7,}/.test(dialablePhone)))return json({ok:false,error:"Please provide a name, message, and valid email or phone number."},400);
+  const token=clean(data.get("cf-turnstile-response"),4096);
+  if(!token)return json({ok:false,error:"Please complete the spam protection check."},400);
+  let verified;
+  try{
+    const response=await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({secret:env.TURNSTILE_SECRET_KEY,response:token,remoteip:request.headers.get("CF-Connecting-IP")||undefined})
+    });
+    verified=await response.json();
+  }catch{return json({ok:false,error:"Spam protection unavailable. Please try again."},502);}
+  if(!verified.success)return json({ok:false,error:"Spam protection failed. Please try again."},403);
   const from=`Website Enquiries <${clean(env.CONTACT_FROM_EMAIL||"emails@rtuino.com",254)}>`;
   const to=clean(env.CONTACT_TO_EMAIL||"macinnisautobody@gmail.com",254);
   if(!to||!/^\S+@\S+\.\S+$/.test(to))return json({ok:false,error:"Contact form recipient is not configured."},503);
@@ -31,4 +42,6 @@ export async function onRequestPost({request,env}){
   }catch{return json({ok:false,error:"Email service unavailable. Please try again."},502);}
 }
 // Contact endpoint: POST only.
-export function onRequestGet(){return json({ok:false,error:"Method not allowed."},405);}
+export function onRequestGet({env}){
+ return env.TURNSTILE_SITE_KEY?json({siteKey:env.TURNSTILE_SITE_KEY}):json({error:"Turnstile not configured."},503);
+}

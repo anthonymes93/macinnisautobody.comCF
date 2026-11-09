@@ -802,7 +802,7 @@ img:is([sizes=auto i],[sizes^="auto," i]){contain-intrinsic-size:3000px 1500px}
 					document.head.appendChild( style );
 					document.currentScript?.remove();
 				} )();
-			</script></div><!-- .wpforms-field-container --><div class="wpforms-submit-container"><input type="hidden" name="wpforms[id]" value="6"><input type="hidden" name="wpforms[time_token]" value="1793491071.4a8116a8b866cc9ed5b3b2227812b679e326a0ac373954b394ae384e4edd78f0"><input type="hidden" name="page_title" value="Home"><input type="hidden" name="page_url" value="/"><input type="hidden" name="url_referer" value=""><input type="hidden" name="page_id" value="308"><input type="hidden" name="wpforms[post_id]" value="308"><button type="submit" name="wpforms[submit]" id="wpforms-submit-6" class="wpforms-submit" data-alt-text="Sending..." data-submit-text="SEND MESSAGE" aria-live="assertive" value="wpforms-submit">SEND MESSAGE</button><img loading="lazy" decoding="async" src="/wp-content/plugins/wpforms-lite/assets/images/submit-spin.svg" class="wpforms-submit-spinner" style="display: none;" width="26" height="26" alt="Loading"><div id="macinnis-contact-status" role="status" aria-live="polite" style="margin-top:12px;font-size:14px"></div></div></form></div>  <!-- .wpforms-container -->				</div>
+			</script></div><!-- .wpforms-field-container --><div class="wpforms-submit-container"><input type="hidden" name="wpforms[id]" value="6"><input type="hidden" name="wpforms[time_token]" value="1793491071.4a8116a8b866cc9ed5b3b2227812b679e326a0ac373954b394ae384e4edd78f0"><input type="hidden" name="page_title" value="Home"><input type="hidden" name="page_url" value="/"><input type="hidden" name="url_referer" value=""><input type="hidden" name="page_id" value="308"><input type="hidden" name="wpforms[post_id]" value="308"><button type="submit" name="wpforms[submit]" id="wpforms-submit-6" class="wpforms-submit" data-alt-text="Sending..." data-submit-text="SEND MESSAGE" aria-live="assertive" value="wpforms-submit">SEND MESSAGE</button><img loading="lazy" decoding="async" src="/wp-content/plugins/wpforms-lite/assets/images/submit-spin.svg" class="wpforms-submit-spinner" style="display: none;" width="26" height="26" alt="Loading"><div id="macinnis-turnstile" style="margin:12px 0"></div><div id="macinnis-contact-status" role="status" aria-live="polite" style="margin-top:12px;font-size:14px"></div></div></form></div>  <!-- .wpforms-container -->				</div>
 				</div>
 					</div>
 		</div>
@@ -986,6 +986,18 @@ var wpforms_settings = {"val_required":"This field is required.","val_email":"Pl
  form.removeAttribute('data-token');
  form.removeAttribute('data-token-time');
  const button=form.querySelector('[type="submit"]');
+ button.disabled=true;
+ let widgetId=null;
+ const turnstileScript=document.createElement('script');
+ turnstileScript.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+ turnstileScript.async=true;
+ document.head.appendChild(turnstileScript);
+ Promise.all([fetch('/api/contact').then(r=>r.json()),new Promise((resolve,reject)=>{turnstileScript.onload=resolve;turnstileScript.onerror=reject;})])
+ .then(([config])=>{
+  if(!config.siteKey||!window.turnstile)throw Error('Spam protection is not configured.');
+  widgetId=window.turnstile.render('#macinnis-turnstile',{sitekey:config.siteKey});
+  button.disabled=false;
+ }).catch(()=>{message('Contact form is temporarily unavailable. Please try again later.',false);});
  const status=document.getElementById('macinnis-contact-status');
  const email=form.querySelector('[name="email"]');
  const phone=form.querySelector('[name="phone"]');
@@ -996,9 +1008,10 @@ var wpforms_settings = {"val_required":"This field is required.","val_email":"Pl
   event.stopImmediatePropagation();
   if(!form.reportValidity())return;
   if(!email.value.trim()&&!phone.value.trim()){message('Please provide an email address or phone number.',false);return;}
-  const turnstileToken='';
-  // Server-side honeypot and Cloudflare rate limiting protect this endpoint.
+  const turnstileToken=widgetId!==null&&window.turnstile?window.turnstile.getResponse(widgetId):'';
+  if(!turnstileToken){message('Please complete the spam protection check.',false);return;}
   const data=new FormData(form);
+  data.set('cf-turnstile-response',turnstileToken);
 
   button.disabled=true;button.textContent='Sending...';message('',false);
   try{
@@ -1007,7 +1020,7 @@ var wpforms_settings = {"val_required":"This field is required.","val_email":"Pl
    if(!res.ok||!body.ok)throw new Error(body.error||'Unable to send your message.');
    form.reset();message('Thank you! Your message has been sent.',true);
   }catch(err){message(err.message||'Unable to send your message. Please try again.',false);}
-  finally{button.disabled=false;button.textContent='SEND MESSAGE';}
+  finally{button.disabled=false;button.textContent='SEND MESSAGE';if(widgetId!==null&&window.turnstile)window.turnstile.reset(widgetId);}
  },true);
 })();
 </script></body>
