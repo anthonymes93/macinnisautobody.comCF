@@ -5,7 +5,8 @@ const clean=(value,max)=>String(value||"").trim().slice(0,max);
 const escapeHtml=(value)=>value.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 export async function onRequestPost({request,env}){
   if(!env.RESEND_API_KEY||!env.TURNSTILE_SECRET_KEY)return json({ok:false,error:"Contact form is not configured yet."},503);
-  const origin=request.headers.get("origin");if(origin&&new URL(origin).host!==new URL(request.url).host)return json({ok:false,error:"Invalid origin."},403);\n  const type=request.headers.get("content-type")||"";
+  const origin=request.headers.get("origin");if(origin&&new URL(origin).host!==new URL(request.url).host)return json({ok:false,error:"Invalid origin."},403);
+  const type=request.headers.get("content-type")||"";
   if(!type.includes("multipart/form-data")&&!type.includes("application/x-www-form-urlencoded"))return json({ok:false,error:"Invalid form submission."},415);
   if(Number(request.headers.get("content-length")||0)>20000)return json({ok:false,error:"Submission too large."},413);
   let data;try{data=await request.formData();}catch{return json({ok:false,error:"Invalid form submission."},400);}
